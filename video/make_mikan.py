@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """台本 #1「みかんの房の数、むく前にわかる？」を縦型動画（1080x1920, 30fps）にする。
 
+案内役は柴犬のキャラクター「コロ」。セリフはOpen JTalkで読み上げ、口パクを音声に合わせる。
 イラスト・テロップ・字幕はPillowで描画し、BGMと効果音はnumpyで合成、ffmpegでMP4にまとめる。
+
+必要なもの: Python3 / Pillow / numpy / ffmpeg / IPAゴシック /
+           open_jtalk（apt: open-jtalk open-jtalk-mecab-naist-jdic hts-voice-nitech-jp-atr503-m001）
 使い方: python3 video/make_mikan.py [出力パス]
 """
 import math
 import os
 import random
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -17,8 +22,27 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 W, H = 1080, 1920
 FPS = 30
-DURATION = 25.5
+DURATION = 25.5          # アニメーション設計上の長さ（「設計時間」）
 SR = 44100
+
+# 実時間 ⇔ 設計時間 の対応。セリフが収まるよう、シーンの切れ目で間を延ばす。
+WARP = [(0.0, 0.0), (2.8, 2.8), (4.2, 3.0), (9.2, 8.0), (9.6, 8.4), (10.8, 8.5),
+        (16.3, 14.0), (21.3, 19.0), (25.3, 23.0), (29.3, 25.5)]
+REAL_DURATION = WARP[-1][0]
+
+
+def r2d(tr):
+    return float(np.interp(tr, [a for a, _ in WARP], [b for _, b in WARP]))
+
+
+def d2r(td):
+    return float(np.interp(td, [b for _, b in WARP], [a for a, _ in WARP]))
+
+
+JTALK_DIC = "/var/lib/mecab/dic/open-jtalk/naist-jdic"
+JTALK_VOICE = "/usr/share/hts-voice/nitech-jp-atr503-m001/nitech_jp_atr503_m001.htsvoice"
+VOICE_PITCH = 6      # 半音単位で高くして、子犬っぽい声にする
+VOICE_SPEED = 1.15
 FONT_PATH = "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf"
 
 random.seed(7)
@@ -328,16 +352,29 @@ TELOPS = [  # (開始, 終了, テキスト)
     (23.3, DURATION, "保存して\n試してみて！"),
 ]
 
-SUBTITLES = [  # ナレーション（音声なしの代わりに字幕で表示）
-    (0.2, 3.0, "みかんの房の数、むく前に\nわかるって知ってた？"),
-    (3.2, 8.0, "ヘタを取って、\n裏の点を数えてみて"),
-    (8.2, 14.0, "この点の数が…"),
-    (14.2, 19.0, "房の数とほぼ同じなんです！"),
-    (19.2, 23.0, "白い筋にも栄養があるから、\n取らずに食べてOK"),
-    (23.2, DURATION, "保存して誰かに\n教えてあげてね！"),
+SUBTITLES = [  # コロのセリフ（設計時間で表示）
+    (0.15, 3.0, "みかんの房の数、むく前に\nわかるって知ってた？"),
+    (3.1, 8.0, "ヘタを取って、\n裏の点を数えてみて！"),
+    (8.05, 8.5, "この点の数が…"),
+    (8.5, 14.0, "いち、に、さん…"),
+    (14.2, 19.0, "房の数と\nほぼ同じなんだワン！"),
+    (19.1, 23.0, "白い筋にも栄養があるから、\n取らずに食べてオッケー！"),
+    (23.1, DURATION, "保存して、誰かに\n教えてあげてね！"),
 ]
 
-COUNT_START, COUNT_STEP = 8.6, 0.45
+# セリフ: (実時間の開始, 読み上げる文)
+VOICE_LINES = [
+    (0.3, "みかんの房の数、むく前にわかるって知ってた？"),
+    (4.45, "ヘタを取って、裏の点を数えてみて！"),
+    (9.35, "この点の数が…"),
+    (d2r(15.9) + 0.05, "房の数と、ほぼ同じなんだワン！"),
+    (21.55, "白い筋にも栄養があるから、取らずに食べてオッケー！"),
+    (25.5, "保存して、誰かに教えてあげてね！"),
+]
+COUNT_WORDS = ["いち", "に", "さん", "よん", "ご", "ろく", "なな", "はち", "きゅう", "じゅう"]
+JUMPS = [2.2, 13.6, 15.9, 23.05]   # コロが跳ねるタイミング（設計時間）
+
+COUNT_START, COUNT_STEP = 8.6, 0.5
 SEG_START, SEG_STEP = 14.25, 0.13
 STEM_POP = 4.6
 
@@ -386,16 +423,36 @@ def draw_telop(frame, t):
             paste_center(frame, scaled(img, s), W / 2, 400, alpha=a)
 
 
+BUBBLE_LEFT, BUBBLE_Y = 285, 1500
+
+
 def draw_subtitle(frame, t):
     for start, end, text in SUBTITLES:
         if start <= t < end:
-            a = clamp((t - start) / 0.2) * (1 - prog(t, end - 0.15, 0.15))
-            txt = text_img(text, 50, fill=(255, 255, 255))
-            box = Image.new("RGBA", (txt.width + 70, txt.height + 44), (0, 0, 0, 0))
-            d = ImageDraw.Draw(box)
-            d.rounded_rectangle((0, 0, box.width - 1, box.height - 1), radius=28, fill=(40, 24, 10, 170))
-            box.alpha_composite(txt, (35, 22))
-            paste_center(frame, box, W / 2, 1585, alpha=a)
+            a = clamp((t - start) / 0.12) * (1 - prog(t, end - 0.12, 0.12))
+            key = ("bubble", text)
+            if key not in _text_cache:
+                txt = text_img(text, 46, fill=(70, 36, 10))
+                tail = 34
+                box = Image.new("RGBA", (txt.width + 70 + tail, txt.height + 44), (0, 0, 0, 0))
+                d = ImageDraw.Draw(box)
+                d.rounded_rectangle((tail, 0, box.width - 1, box.height - 1), radius=30,
+                                    fill=(255, 255, 255, 245), outline=(236, 128, 30, 255), width=5)
+                cy = box.height / 2
+                d.polygon([(2, cy + 4), (tail + 6, cy - 18), (tail + 6, cy + 18)], fill=(255, 255, 255, 245))
+                d.line([(tail + 3, cy - 18), (2, cy + 4), (tail + 3, cy + 18)], fill=(236, 128, 30, 255), width=5)
+                box.alpha_composite(txt, (tail + 35, 22))
+                _text_cache[key] = box
+            box = _text_cache[key]
+            frame.alpha_composite(_alpha(box, a), (BUBBLE_LEFT, int(BUBBLE_Y - box.height / 2)))
+
+
+def _alpha(img, a):
+    if a >= 1:
+        return img
+    img = img.copy()
+    img.putalpha(img.getchannel("A").point(lambda v: int(v * a)))
+    return img
 
 
 def draw_sparkles(frame, A, t, cx, cy, radius, seed, n=6, start=0.0):
@@ -475,9 +532,9 @@ def scene_top(frame, A, t):
         count_upto = sum(1 for i in range(N_DOTS) if t >= COUNT_START + i * COUNT_STEP)
     glow = STEM_POP + 0.5 < t < 8.0
     draw_top_view(frame, A, t, scale, clamp(p * 1.5), show_stem, t, count_upto, glow)
-    if t > 13.3:
+    if t > 13.6:
         # 「10個」の強調
-        k = prog(t, 13.3, 0.3)
+        k = prog(t, 13.6, 0.3)
         lbl = text_img("10個", 120, fill=(255, 240, 90), stroke=14, stroke_fill=(190, 60, 0))
         paste_center(frame, scaled(lbl, 0.4 + 0.6 * ease_out_back(k)), W / 2, 990, alpha=clamp(k * 3))
 
@@ -545,7 +602,105 @@ def flash(frame, t, at, dur=0.25):
         frame.alpha_composite(Image.new("RGBA", frame.size, (255, 255, 255, int(200 * a))))
 
 
-def render_frame(A, t):
+# ---------------------------------------------------------------- dog character
+DOG_W, DOG_H = 320, 400
+DOG_SCALE = 0.875
+DOG_X, DOG_Y = 145, 1520
+_dog_cache = {}
+
+
+def dog_sprite(mouth, eyes):
+    """柴犬「コロ」。mouth: 0(閉)〜5(大きく開く), eyes: open / blink / happy"""
+    key = (mouth, eyes)
+    if key in _dog_cache:
+        return _dog_cache[key]
+    ss = 3
+    img = Image.new("RGBA", (DOG_W * ss, DOG_H * ss), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+
+    def E(cx, cy, w, h, **kw):
+        d.ellipse(((cx - w / 2) * ss, (cy - h / 2) * ss, (cx + w / 2) * ss, (cy + h / 2) * ss), **kw)
+
+    def P(pts, **kw):
+        d.polygon([(x * ss, y * ss) for x, y in pts], **kw)
+
+    fur, fur_dark, white = (236, 158, 72), (206, 122, 46), (255, 248, 238)
+    ink = (52, 34, 24)
+    # 体
+    E(160, 318, 230, 150, fill=fur_dark)
+    E(160, 314, 220, 140, fill=fur)
+    E(160, 318, 120, 112, fill=white)
+    # 首輪とみかんのチャーム
+    d.rounded_rectangle((92 * ss, 252 * ss, 228 * ss, 272 * ss), radius=10 * ss, fill=(214, 52, 52))
+    E(160, 290, 38, 34, fill=(247, 140, 20), outline=(214, 100, 10), width=2 * ss)
+    E(166, 274, 16, 8, fill=(74, 150, 52))
+    # 耳
+    for sgn in (-1, 1):
+        cx = 160
+        P([(cx + sgn * 100, 100), (cx + sgn * 78, 12), (cx + sgn * 22, 62)], fill=fur_dark)
+        P([(cx + sgn * 92, 88), (cx + sgn * 76, 30), (cx + sgn * 40, 64)], fill=(250, 206, 172))
+    # 頭
+    E(160, 162, 276, 236, fill=fur_dark)
+    E(160, 158, 266, 226, fill=fur)
+    # 白いほっぺとマズル（裏白）
+    E(108, 206, 118, 92, fill=white)
+    E(212, 206, 118, 92, fill=white)
+    E(160, 204, 116, 96, fill=white)
+    # 麻呂眉
+    E(118, 116, 30, 17, fill=white)
+    E(202, 116, 30, 17, fill=white)
+    # ほっぺの赤み
+    E(84, 196, 34, 20, fill=(255, 160, 150))
+    E(236, 196, 34, 20, fill=(255, 160, 150))
+    # 目
+    for ex in (118, 202):
+        if eyes == "open":
+            E(ex, 150, 30, 38, fill=ink)
+            E(ex - 5, 141, 11, 13, fill=(255, 255, 255))
+            E(ex + 6, 158, 5, 5, fill=(255, 255, 255))
+        elif eyes == "blink":
+            d.arc(((ex - 15) * ss, 140 * ss, (ex + 15) * ss, 162 * ss), 20, 160, fill=ink, width=5 * ss)
+        else:  # happy ^ ^
+            d.arc(((ex - 16) * ss, 140 * ss, (ex + 16) * ss, 166 * ss), 200, 340, fill=ink, width=6 * ss)
+    # 口
+    if mouth > 0:
+        h = 8 + mouth * 8
+        E(160, 214 + h / 2, 40 + mouth * 3, h, fill=(130, 34, 34))
+        E(160, 214 + h * 0.8, 26 + mouth * 2, h * 0.45, fill=(246, 120, 130))
+    d.arc((136 * ss, 186 * ss, 162 * ss, 214 * ss), 20, 160, fill=ink, width=4 * ss)
+    d.arc((158 * ss, 186 * ss, 184 * ss, 214 * ss), 20, 160, fill=ink, width=4 * ss)
+    # 鼻
+    E(160, 184, 44, 30, fill=ink)
+    E(153, 178, 13, 7, fill=(120, 110, 105))
+    img = img.resize((int(DOG_W * DOG_SCALE), int(DOG_H * DOG_SCALE)), Image.LANCZOS)
+    _dog_cache[key] = img
+    return img
+
+
+def draw_dog(frame, t, tr, mouth_level):
+    jump = 0.0
+    for j in JUMPS:
+        p = prog(t, j, 0.45)
+        if 0 < p < 1:
+            jump = max(jump, math.sin(p * math.pi))
+    happy = jump > 0 or t >= 23.0
+    blink = (tr % 3.1) < 0.13
+    eyes = "happy" if happy else ("blink" if blink else "open")
+    img = dog_sprite(mouth_level, eyes)
+    tilt = math.sin(tr * 1.7) * 3 + (2.5 * math.sin(tr * 9) if mouth_level else 0)
+    img = img.rotate(tilt, resample=Image.BICUBIC, expand=True)
+    bob = math.sin(tr * 3.2) * 5
+    # 影
+    sh_w = 200 * (1 - 0.3 * jump)
+    shadow = Image.new("RGBA", (int(sh_w) + 40, 70), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).ellipse((20, 20, 20 + sh_w, 50), fill=(150, 80, 20, 70))
+    paste_center(frame, shadow.filter(ImageFilter.GaussianBlur(8)), DOG_X, DOG_Y + 150)
+    paste_center(frame, img, DOG_X, DOG_Y + bob - 70 * jump)
+
+
+def render_frame(A, t, tr=None, mouth_level=0):
+    if tr is None:
+        tr = d2r(t)
     frame = A.bg.copy()
     if t < 3.0:
         scene_roll(frame, A, t)
@@ -561,6 +716,7 @@ def render_frame(A, t):
         flash(frame, t, at)
     paste_center(frame, A.badge, W / 2, 190)
     draw_telop(frame, t)
+    draw_dog(frame, t, tr, mouth_level)
     draw_subtitle(frame, t)
     return frame.convert("RGB")
 
@@ -587,8 +743,54 @@ def add(buf, sig, at):
         buf[i:j] += sig[: j - i]
 
 
-def make_audio(path):
-    total = int(DURATION * SR)
+def synth_voice(text, tmpdir):
+    """Open JTalkで読み上げ、前後の無音を削ってSRのnumpy配列で返す。"""
+    if not shutil.which("open_jtalk"):
+        return None
+    wav_path = os.path.join(tmpdir, "jtalk.wav")
+    subprocess.run(["open_jtalk", "-x", JTALK_DIC, "-m", JTALK_VOICE, "-fm", str(VOICE_PITCH),
+                    "-r", str(VOICE_SPEED), "-ow", wav_path], input=text.encode("utf-8"), check=True)
+    with wave.open(wav_path) as w:
+        sr = w.getframerate()
+        x = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(float) / 32768
+        if w.getnchannels() == 2:
+            x = x.reshape(-1, 2).mean(axis=1)
+    if sr != SR:
+        x = np.interp(np.arange(int(len(x) * SR / sr)) * sr / SR, np.arange(len(x)), x)
+    idx = np.where(np.abs(x) > 0.02 * np.abs(x).max())[0]
+    if len(idx):
+        x = x[max(0, idx[0] - int(0.02 * SR)): idx[-1] + int(0.05 * SR)]
+    return x
+
+
+def make_voice_track(tmpdir):
+    total = int(REAL_DURATION * SR)
+    voice = np.zeros(total)
+    lines = list(VOICE_LINES)
+    for i, word in enumerate(COUNT_WORDS):
+        lines.append((d2r(COUNT_START + i * COUNT_STEP) + 0.02, word))
+    for at, text in lines:
+        v = synth_voice(text, tmpdir)
+        if v is None:
+            print("open_jtalk が見つからないため、音声なしで書き出します", file=sys.stderr)
+            return voice
+        add(voice, v / (np.abs(v).max() + 1e-9) * 0.8, at)
+    return voice
+
+
+def mouth_levels(voice):
+    """1フレームごとの口の開き（0〜5）。"""
+    n = int(REAL_DURATION * FPS)
+    hop = SR // FPS
+    env = np.array([np.sqrt(np.mean(voice[i * hop:(i + 1) * hop] ** 2) + 1e-12) for i in range(n)])
+    ref = np.percentile(env[env > 0.01], 90) if np.any(env > 0.01) else 1
+    lv = np.clip(env / ref * 5, 0, 5)
+    lv[env < 0.015] = 0
+    return np.round(lv).astype(int)
+
+
+def make_audio(path, voice):
+    total = int(REAL_DURATION * SR)
     bgm = np.zeros(total)
     sfx = np.zeros(total)
     bpm = 118
@@ -602,7 +804,7 @@ def make_audio(path):
     pattern = [(0, 1.0), (1, 0.6), (1.5, 0.45), (2, 0.85), (2.5, 0.45), (3, 0.6), (3.5, 0.45)]
     bar = 0
     t0 = 0.0
-    while t0 < DURATION:
+    while t0 < REAL_DURATION:
         notes, root = chords[bar % 4]
         for pos, vel in pattern:
             at = t0 + pos * beat
@@ -632,6 +834,7 @@ def make_audio(path):
         bar += 1
 
     def pop(at, f0=500, f1=1100, amp=0.35):
+        at = d2r(at)
         n = int(0.09 * SR)
         tt = np.arange(n) / SR
         f = f0 + (f1 - f0) * (tt / tt[-1])
@@ -639,6 +842,7 @@ def make_audio(path):
         add(sfx, np.sin(ph) * np.exp(-tt * 40) * amp, at)
 
     def whoosh(at, dur=0.45, amp=0.25):
+        at = d2r(at)
         n = int(dur * SR)
         noise = np.random.randn(n)
         k = 40
@@ -647,6 +851,7 @@ def make_audio(path):
         add(sfx, sm * env * amp * 3, at)
 
     def ding(at, amp=0.3):
+        at = d2r(at)
         for m, d0 in ((84, 0), (88, 0.08), (91, 0.16)):
             n = int(1.0 * SR)
             tt = np.arange(n) / SR
@@ -655,6 +860,7 @@ def make_audio(path):
             add(sfx, s * amp * 0.5, at + d0)
 
     def thud(at, amp=0.45):
+        at = d2r(at)
         n = int(0.25 * SR)
         tt = np.arange(n) / SR
         f = 140 * np.exp(-tt * 12) + 50
@@ -669,8 +875,8 @@ def make_audio(path):
     pop(STEM_POP, 300, 1500, 0.45)
     whoosh(7.95)
     for i in range(N_DOTS):
-        pop(COUNT_START + i * COUNT_STEP, 600 + 40 * i, 1200 + 60 * i, 0.3)
-    ding(13.3)
+        pop(COUNT_START + i * COUNT_STEP, 600 + 40 * i, 1200 + 60 * i, 0.14)
+    ding(13.6)
     whoosh(13.95)
     for i in range(N_DOTS):
         pop(SEG_START + i * SEG_STEP, 350, 700, 0.2)
@@ -682,7 +888,11 @@ def make_audio(path):
     ding(23.3, 0.35)
     pop(24.0, 500, 1300)
 
-    mix = bgm * 0.8 + sfx
+    # 声が出ている間はBGMを下げる
+    k = int(0.15 * SR)
+    env = np.convolve(np.abs(voice), np.ones(k) / k, mode="same")
+    duck = 1 - 0.55 * np.clip(env / 0.05, 0, 1)
+    mix = bgm * 0.8 * duck + sfx * 0.8 + voice * 0.95
     fade = int(1.2 * SR)
     mix[-fade:] *= np.linspace(1, 0, fade)
     mix[: int(0.05 * SR)] *= np.linspace(0, 1, int(0.05 * SR))
@@ -703,16 +913,19 @@ def main():
     A = Assets()
     with tempfile.TemporaryDirectory() as tmp:
         wav = os.path.join(tmp, "audio.wav")
-        make_audio(wav)
+        voice = make_voice_track(tmp)
+        mouths = mouth_levels(voice)
+        make_audio(wav, voice)
         cmd = ["ffmpeg", "-y", "-loglevel", "error",
                "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
                "-i", wav,
                "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
                "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out]
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-        frames = int(DURATION * FPS)
+        frames = int(REAL_DURATION * FPS)
         for f in range(frames):
-            proc.stdin.write(render_frame(A, f / FPS).tobytes())
+            tr = f / FPS
+            proc.stdin.write(render_frame(A, r2d(tr), tr, int(mouths[f])).tobytes())
             if f % 150 == 0:
                 print(f"frame {f}/{frames}", flush=True)
         proc.stdin.close()
