@@ -254,6 +254,9 @@ def draw_bubble(frame, text, a, color=(236, 128, 30)):
         d.polygon([(2, cy + 4), (tail + 6, cy - 18), (tail + 6, cy + 18)], fill=(255, 255, 255, 245))
         d.line([(tail + 3, cy - 18), (2, cy + 4), (tail + 3, cy + 18)], fill=color + (255,), width=5)
         box.alpha_composite(txt, (tail + 35, 22))
+        max_w = W - BUBBLE_LEFT - 18          # 画面からはみ出さないように縮める
+        if box.width > max_w:
+            box = box.resize((max_w, int(box.height * max_w / box.width)), Image.LANCZOS)
         _text_cache[key] = box
     box = _text_cache[key]
     frame.alpha_composite(with_alpha(box, a), (BUBBLE_LEFT, int(BUBBLE_Y - box.height / 2)))

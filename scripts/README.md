@@ -33,9 +33,15 @@
 | 3 | `video/out/ichigo.mp4`（約19秒） | `python3 video/make_ichigo.py` |
 | 4 | `video/out/banana.mp4`（約23秒） | `python3 video/make_banana.py` |
 | 5 | `video/out/tomato.mp4`（約19秒） | `python3 video/make_tomato.py` |
+| 6 | `video/out/ringo.mp4`（約21秒） | `python3 video/make_ringo.py` |
+| 7 | `video/out/ninjin.mp4`（約23秒） | `python3 video/make_ninjin.py` |
+| 8 | `video/out/kiwi.mp4`（約25秒） | `python3 video/make_kiwi.py` |
+| 9 | `video/out/tamanegi.mp4`（約24秒） | `python3 video/make_tamanegi.py` |
+| 10 | `video/out/suika.mp4`（約24秒） | `python3 video/make_suika.py` |
 
 - 投稿用のタイトル・説明文・ハッシュタグは [`video/posts.md`](../video/posts.md)
-- #2〜#5 は共通エンジン `video/engine.py` で作っている（シーンを並べるだけで、セリフの長さに合わせてシーンの長さが自動で決まる）。#1 は単独のスクリプト。
+- サムネイルは `python3 video/make_thumbs.py` で `video/out/thumbs/` に書き出す
+- #2〜#10 は共通エンジン `video/engine.py` で作っている（シーンを並べるだけで、セリフの長さに合わせてシーンの長さが自動で決まる）。#1 は単独のスクリプト。
 - 必要なもの：Python3、Pillow、numpy、ffmpeg、IPAゴシックフォント、Open JTalk（`apt install open-jtalk open-jtalk-mecab-naist-jdic`）
 - 案内役は柴犬のキャラクター「コロ」。セリフはOpen JTalkで読み上げ、口パクを音声の大きさに合わせて動かす。
 - イラスト・テロップ・BGM・効果音はすべてスクリプト内で生成。声が出ている間はBGMを自動で下げる。

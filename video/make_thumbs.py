@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""5本の動画のサムネイル（リール表紙用 1080x1920）を作る。
+"""シリーズ全動画のサムネイル（リール表紙用 1080x1920）を作る。
 
 プロフィールの一覧では中央の 3:4（1080x1440, 上下240pxずつ切れる）だけが見えるので、
 文字とキャラクターはその範囲に収める。出力: video/out/thumbs/thumb_XX.png
@@ -49,8 +49,9 @@ def make_thumb(n, video, title, subject_fn, ray_color):
     # タイトル（大きく・太く）
     sh = E.text_img(title, 140, fill=(90, 40, 0), stroke=22, stroke_fill=(90, 40, 0), spacing=20)
     tt = E.text_img(title, 140, fill=(255, 255, 255), stroke=22, stroke_fill=video.telop_stroke, spacing=20)
-    E.paste_center(frame, sh, E.W / 2 + 8, 560 + 10, alpha=0.45)
-    E.paste_center(frame, tt, E.W / 2, 560)
+    fit = min(1.0, (E.W - 50) / tt.width)      # 長いタイトルは横幅に収まるよう縮める
+    E.paste_center(frame, E.scaled(sh, fit), E.W / 2 + 8, 560 + 10, alpha=0.45)
+    E.paste_center(frame, E.scaled(tt, fit), E.W / 2, 560)
     E.paste_center(frame, video.badge, E.W / 2, 330)
     # コロ（大きめ・にっこり）
     dog = E.scaled(E.dog_sprite(4, "happy"), 1.55)
@@ -123,6 +124,12 @@ def main():
         (4, ban.VIDEO, "茶色い点は\n捨てないで！", s_banana, (255, 200, 60)),
         (5, tom.VIDEO, "甘いトマトは\nお尻でわかる", s_tomato, (255, 120, 90)),
     ]
+    # #6 以降：各スクリプトの THUMB と thumb_subject を使う
+    import importlib
+    for n, name in enumerate(["make_ringo", "make_ninjin", "make_kiwi", "make_tamanegi", "make_suika"], start=6):
+        mod = importlib.import_module(name)
+        title, ray = mod.THUMB
+        items.append((n, mod.VIDEO, title, mod.thumb_subject, ray))
     thumbs = []
     for n, video, title, fn, ray in items:
         img = make_thumb(n, video, title, fn, ray)
@@ -132,7 +139,8 @@ def main():
         print("wrote", path)
     # 一覧（プロフィールでの見え方：中央3:4）
     cw, ch = 360, 480
-    sheet = Image.new("RGB", (cw * 3 + 40, ch * 2 + 30), (250, 250, 250))
+    rows = (len(thumbs) + 2) // 3
+    sheet = Image.new("RGB", (cw * 3 + 40, ch * rows + 10 * (rows + 1)), (250, 250, 250))
     for i, img in enumerate(thumbs):
         crop = img.crop((0, 240, 1080, 1680)).resize((cw, ch), Image.LANCZOS)
         sheet.paste(crop, (10 + (i % 3) * (cw + 10), 10 + (i // 3) * (ch + 10)))
