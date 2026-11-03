@@ -27,6 +27,8 @@
 ## 動画
 
 - `video/make_mikan.py` … #1 みかんの台本を縦型動画（1080x1920・約29秒）にするスクリプト。`python3 video/make_mikan.py` で `video/out/mikan.mp4` を書き出す。
-- 必要なもの：Python3、Pillow、numpy、ffmpeg、IPAゴシックフォント、Open JTalk（`apt install open-jtalk open-jtalk-mecab-naist-jdic hts-voice-nitech-jp-atr503-m001`）
-- 案内役は柴犬のキャラクター「コロ」。セリフはOpen JTalkで読み上げ（声を高めにして子犬っぽく）、口パクを音声の大きさに合わせて動かす。点を数えるところは「いち、に、さん…」と声で数える。
+- 必要なもの：Python3、Pillow、numpy、ffmpeg、IPAゴシックフォント、Open JTalk（`apt install open-jtalk open-jtalk-mecab-naist-jdic`）
+- 案内役は柴犬のキャラクター「コロ」。セリフはOpen JTalkで読み上げ、口パクを音声の大きさに合わせて動かす。点を数えるところは「いち、に、さん…」と声で数える。
 - イラスト・テロップ・BGM・効果音はすべてスクリプト内で生成。声が出ている間はBGMを自動で下げる。
+- 声のモデル：東北大学 知的通信ネットワーク研究室「HTS voice tohoku-f01」（happy、CC BY 4.0）。`video/voices/` に同梱。動画を投稿するときは説明欄などにクレジットを入れる。
+  - クレジット例：`音声：HTS voice tohoku-f01（東北大学 伊藤・能勢研究室, CC BY 4.0）`

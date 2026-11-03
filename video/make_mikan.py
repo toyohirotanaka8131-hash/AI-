@@ -5,7 +5,8 @@
 イラスト・テロップ・字幕はPillowで描画し、BGMと効果音はnumpyで合成、ffmpegでMP4にまとめる。
 
 必要なもの: Python3 / Pillow / numpy / ffmpeg / IPAゴシック /
-           open_jtalk（apt: open-jtalk open-jtalk-mecab-naist-jdic hts-voice-nitech-jp-atr503-m001）
+           open_jtalk（apt: open-jtalk open-jtalk-mecab-naist-jdic）
+声のモデルは video/voices/ に同梱（東北大学 tohoku-f01, CC BY 4.0）
 使い方: python3 video/make_mikan.py [出力パス]
 """
 import math
@@ -40,9 +41,11 @@ def d2r(td):
 
 
 JTALK_DIC = "/var/lib/mecab/dic/open-jtalk/naist-jdic"
-JTALK_VOICE = "/usr/share/hts-voice/nitech-jp-atr503-m001/nitech_jp_atr503_m001.htsvoice"
-VOICE_PITCH = 6      # 半音単位で高くして、子犬っぽい声にする
-VOICE_SPEED = 1.15
+# 声：東北大学 tohoku-f01（女性・happy）CC BY 4.0  video/voices/COPYRIGHT-tohoku-f01.txt
+JTALK_VOICE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "voices", "tohoku-f01-happy.htsvoice")
+VOICE_PITCH = 2      # 半音単位。少しだけ高くして子犬っぽく
+VOICE_SPEED = 1.0    # ゆっくりめのほうが親しみやすい
+VOICE_INTONATION = 1.25  # 抑揚を少し強めて明るく
 FONT_PATH = "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf"
 
 random.seed(7)
@@ -368,7 +371,7 @@ VOICE_LINES = [
     (4.45, "ヘタを取って、裏の点を数えてみて！"),
     (9.35, "この点の数が…"),
     (d2r(15.9) + 0.05, "房の数と、ほぼ同じなんだワン！"),
-    (21.55, "白い筋にも栄養があるから、取らずに食べてオッケー！"),
+    (21.4, "白い筋にも栄養があるから、取らずに食べてオッケー！"),
     (25.5, "保存して、誰かに教えてあげてね！"),
 ]
 COUNT_WORDS = ["いち", "に", "さん", "よん", "ご", "ろく", "なな", "はち", "きゅう", "じゅう"]
@@ -749,7 +752,7 @@ def synth_voice(text, tmpdir):
         return None
     wav_path = os.path.join(tmpdir, "jtalk.wav")
     subprocess.run(["open_jtalk", "-x", JTALK_DIC, "-m", JTALK_VOICE, "-fm", str(VOICE_PITCH),
-                    "-r", str(VOICE_SPEED), "-ow", wav_path], input=text.encode("utf-8"), check=True)
+                    "-r", str(VOICE_SPEED), "-jf", str(VOICE_INTONATION), "-ow", wav_path], input=text.encode("utf-8"), check=True)
     with wave.open(wav_path) as w:
         sr = w.getframerate()
         x = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(float) / 32768
